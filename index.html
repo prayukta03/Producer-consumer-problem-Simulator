@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airport Baggage Flow — Producer–Consumer OS Simulator</title>
+  <meta name="description" content="Interactive Operating Systems simulator for the Producer–Consumer problem, bounded buffer, race conditions and mutex synchronization, themed as an airport baggage handling system.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip-link" href="#sim">Skip to the simulation</a>
+
+<!-- ============ HEADER ============ -->
+<header class="app-header">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">✈️</div>
+    <div class="brand-text">
+      <h1>AIRPORT BAGGAGE FLOW</h1>
+      <p class="brand-sub">Producer–Consumer Operating Systems Simulator</p>
+      <p class="brand-tag">Visualizing Process Synchronization, Bounded Buffers &amp; Race Conditions</p>
+    </div>
+  </div>
+  <div class="hdr-right" role="group" aria-label="System status and quick controls">
+    <span id="hdrStatus" class="status-badge idle" role="status"><i></i><b>SYSTEM READY</b></span>
+    <button id="hdrSpeed" class="chip-btn" type="button" aria-label="Simulation speed, press to change">1×</button>
+    <button id="hdrReset" class="btn ghost" type="button">↻ Reset</button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ CURRENT SYSTEM STATE ============ -->
+  <section class="state-card" id="stateCard" aria-labelledby="stateTitle">
+    <div class="state-main">
+      <h2 id="stateTitle" class="eyebrow">CURRENT SYSTEM STATE</h2>
+      <div class="state-pill idle" id="statePill" role="status" aria-live="polite">
+        <span id="stateIcon" aria-hidden="true">⚪</span><span id="stateLabel">IDLE</span>
+      </div>
+      <p id="stateCaption" class="state-caption">Press START to open the check-in counters.</p>
+      <div id="bannerArea" class="banner-area"></div>
+    </div>
+    <dl class="state-grid" id="stateGrid"></dl>
+  </section>
+
+  <!-- ============ CONTROL BAR ============ -->
+  <nav class="control-bar" aria-label="Simulation controls">
+    <button id="btnStart" class="btn primary" type="button">▶ Start</button>
+    <button id="btnPause" class="btn" type="button" disabled>⏸ Pause</button>
+    <button id="btnReset" class="btn" type="button">↻ Reset</button>
+    <div class="seg" role="group" aria-label="Simulation speed">
+      <span class="seg-label">⚡ Speed</span>
+      <button class="seg-btn" type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+      <button class="seg-btn" type="button" data-speed="1" aria-pressed="true">1×</button>
+      <button class="seg-btn" type="button" data-speed="2" aria-pressed="false">2×</button>
+      <button class="seg-btn" type="button" data-speed="4" aria-pressed="false">4×</button>
+    </div>
+    <button id="btnSync" class="btn toggle on" type="button" aria-pressed="true">🔒 Synchronization: ON</button>
+    <button id="btnRace" class="btn warn" type="button">⚠ Simulate Race Condition</button>
+    <button id="btnRush" class="btn danger" type="button">🚨 Simulate Flight Rush</button>
+    <a class="btn" href="#lab">🧪 Scenario Lab</a>
+    <button id="btnViva" class="btn accent" type="button">🎓 Viva Mode</button>
+  </nav>
+
+  <!-- ============ MAIN LIVE SIMULATION ============ -->
+  <section id="sim" class="panel sim-panel" aria-labelledby="simTitle">
+    <div class="panel-head">
+      <h2 id="simTitle">Live simulation</h2>
+      <p class="flow-hint" aria-label="Flow: Producer to Buffer to Consumers to Aircraft">
+        <span class="fh p">Producer</span><i>→</i><span class="fh b">Buffer</span><i>→</i><span class="fh c">Consumers</span><i>→</i><span class="fh a">Aircraft</span>
+      </p>
+    </div>
+
+    <div class="pipeline" id="pipeline">
+      <!-- PRODUCER -->
+      <article class="station st-producer" id="stProducer" aria-label="Producer: check-in and security">
+        <header class="st-head">
+          <span class="role role-p">PRODUCER</span>
+          <h3>Check-in &amp; Security</h3>
+        </header>
+        <div class="counter">
+          <div class="counter-desk">🛂 Check-in counter</div>
+          <div class="queue" id="pQueue" aria-hidden="true"></div>
+        </div>
+        <div class="scanbar" id="pScan" aria-hidden="true"><i></i></div>
+        <div class="bag-slot" id="pBagSlot"></div>
+        <div class="st-foot">
+          <span class="chip idle" id="pStatusChip">IDLE</span>
+          <span class="note" id="pNote"></span>
+        </div>
+      </article>
+
+      <div class="link link-1" aria-hidden="true"><span>PRODUCES</span><i>➜</i></div>
+
+      <!-- BUFFER -->
+      <article class="station st-buffer" id="stBuffer" aria-label="Bounded buffer: baggage conveyor">
+        <header class="st-head">
+          <span class="role role-b">BOUNDED BUFFER</span>
+          <h3>Baggage Conveyor</h3>
+          <span class="count-chip" id="bCount">0 / 6</span>
+        </header>
+        <div class="belt-wrap" id="beltWrap">
+          <div class="belt-flags" aria-hidden="true"><span>⬇ from check-in</span><span>to sorting ➜</span></div>
+          <div class="belt" id="belt" role="list" aria-label="Conveyor slots"></div>
+          <div class="lock-badge" id="lockBadge" hidden>🔒 MUTEX LOCKED</div>
+        </div>
+        <div class="alert" id="bufAlert" hidden role="status"></div>
+      </article>
+
+      <div class="link link-2" aria-hidden="true"><span>CONSUMES</span><i>➜</i></div>
+
+      <!-- CONSUMERS -->
+      <article class="station st-consumers" id="stConsumers" aria-label="Consumers: sorting and loading">
+        <header class="st-head">
+          <span class="role role-c">CONSUMERS</span>
+          <h3>Sorting &amp; Loading</h3>
+        </header>
+        <div class="pc-list" id="pipeConsumers"></div>
+      </article>
+
+      <!-- AIRCRAFT -->
+      <article class="tarmac" id="stAircraft" aria-label="Aircraft loading zone">
+        <div class="tarmac-info">
+          <span class="role role-a">AIRCRAFT</span>
+          <h3>Loading zone · Tarmac</h3>
+          <p class="tarmac-total"><b id="loadedTotal">0</b> bags loaded</p>
+        </div>
+        <div class="plane" id="planeIcon" aria-hidden="true">✈️</div>
+        <div class="flight-chips" id="flightChips"></div>
+      </article>
+
+      <svg class="race-svg" id="raceSvg" aria-hidden="true"></svg>
+      <div class="fx-layer" id="fxLayer" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <!-- ============ PRODUCER | BUFFER | CONSUMER PANELS ============ -->
+  <div class="panel-row">
+    <section class="panel" id="panelProducer" aria-labelledby="ppTitle">
+      <header class="panel-head col">
+        <h2 id="ppTitle">👷 Producer</h2>
+        <p class="sub">Check-in &amp; Security System</p>
+      </header>
+      <dl class="kv">
+        <div><dt>Status</dt><dd id="ppStatus">IDLE</dd></div>
+        <div><dt>Bags produced</dt><dd id="ppProduced">0</dd></div>
+        <div><dt>Production speed</dt><dd id="ppSpeed">Medium</dd></div>
+        <div><dt>Waiting count</dt><dd id="ppWaiting">0</dd></div>
+      </dl>
+      <div class="alert danger" id="ppAlert" hidden>
+        <b>⚠ BUFFER FULL</b><span>Producer is waiting for available space.</span>
+      </div>
+      <div class="controls">
+        <button id="btnAdd" class="btn primary block" type="button">➕ Add Baggage</button>
+        <div class="switch-row">
+          <span id="lblAutoP">Auto Produce</span>
+          <button id="tgProducer" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="lblAutoP"><i></i></button>
+        </div>
+        <label class="slider-row" for="sliderProd">
+          <span>Production speed <b id="sliderProdVal">Medium</b></span>
+          <input id="sliderProd" type="range" min="1" max="10" step="1" value="4">
+          <small class="range-ends"><span>Slow</span><span>Fast</span></small>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="panelBuffer" aria-labelledby="bpTitle">
+      <header class="panel-head col">
+        <h2 id="bpTitle">🧳 Bounded Buffer</h2>
+        <p class="sub">Airport Baggage Conveyor</p>
+      </header>
+      <div class="cap-big" aria-live="off">
+        <span class="cap-label">CAPACITY</span>
+        <span class="cap-num"><b id="bpUsed">0</b> / <span id="bpCap">6</span></span>
+      </div>
+      <div class="meter" id="bpMeter" aria-hidden="true"></div>
+      <dl class="kv two">
+        <div><dt>Occupied slots</dt><dd id="bpOcc">0</dd></div>
+        <div><dt>Free slots</dt><dd id="bpFree">6</dd></div>
+      </dl>
+      <div class="buf-state"><span class="chip idle" id="bpState">EMPTY</span></div>
+      <div class="alert" id="bpAlert" role="status">
+        <b>BUFFER EMPTY</b><span>Consumers are waiting for baggage.</span>
+      </div>
+    </section>
+
+    <section class="panel" id="panelConsumers" aria-labelledby="cpTitle">
+      <header class="panel-head col">
+        <h2 id="cpTitle">🔍 Consumers</h2>
+        <p class="sub">Baggage Sorting Processes</p>
+      </header>
+      <div class="controls tight">
+        <div class="switch-row">
+          <span id="lblAutoC">Auto Consume</span>
+          <button id="tgConsumer" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="lblAutoC"><i></i></button>
+        </div>
+        <label class="slider-row" for="sliderCons">
+          <span>Consumption speed <b id="sliderConsVal">Medium</b></span>
+          <input id="sliderCons" type="range" min="1" max="10" step="1" value="4">
+          <small class="range-ends"><span>Slow</span><span>Fast</span></small>
+        </label>
+      </div>
+      <div class="cp-list" id="cPanelList"></div>
+    </section>
+  </div>
+
+  <!-- ============ SYNCHRONIZATION MONITOR ============ -->
+  <section class="panel sync-panel" id="syncPanel" aria-labelledby="syncTitle">
+    <header class="panel-head">
+      <h2 id="syncTitle">🔐 Synchronization monitor</h2>
+      <button id="btnSync2" class="btn toggle on" type="button" aria-pressed="true">Synchronization: ON</button>
+    </header>
+    <div class="sync-body">
+      <div class="mx-lock" id="mxLockBox">
+        <div class="mx-icon" id="mxIcon" aria-hidden="true">🔓</div>
+        <div class="mx-state" id="mxState">UNLOCKED</div>
+      </div>
+      <dl class="kv sync-kv">
+        <div><dt>Mutex</dt><dd id="mxVal">UNLOCKED</dd></div>
+        <div><dt>Owner</dt><dd id="mxOwner">—</dd></div>
+        <div><dt>Waiting consumers</dt><dd id="mxWaiting">0</dd></div>
+        <div><dt>Empty slots</dt><dd id="semEmpty">6</dd></div>
+        <div><dt>Filled slots</dt><dd id="semFull">0</dd></div>
+      </dl>
+      <ol class="mx-steps" id="mxSteps" aria-label="Mutex protocol">
+        <li data-step="1"><b>Consumer requests the lock</b><span>wait(mutex)</span></li>
+        <li data-step="2"><b>🔒 Mutex locked</b><span>only one consumer inside</span></li>
+        <li data-step="3"><b>Consumer removes the bag</b><span>critical section</span></li>
+        <li data-step="4"><b>🔓 Mutex released</b><span>signal(mutex), next consumer proceeds</span></li>
+      </ol>
+    </div>
+    <p class="sync-note" id="mxNote"></p>
+  </section>
+
+  <!-- ============ LIVE STATISTICS ============ -->
+  <section class="stats" aria-labelledby="statsTitle">
+    <h2 id="statsTitle" class="sr-only">Live statistics</h2>
+    <div class="stat"><span>BAGS PRODUCED</span><b id="mProduced">0</b></div>
+    <div class="stat"><span>BAGS PROCESSED</span><b id="mProcessed">0</b></div>
+    <div class="stat"><span>BUFFER USAGE</span><b id="mUsage">0 / 6</b></div>
+    <div class="stat warn"><span>PRODUCER WAITS</span><b id="mPWaits">0</b></div>
+    <div class="stat warn"><span>CONSUMER WAITS</span><b id="mCWaits">0</b></div>
+    <div class="stat danger"><span>RACE CONDITIONS</span><b id="mRaces">0</b></div>
+    <div class="stat danger"><span>BAGS LOST TO RACES</span><b id="mLost">0</b></div>
+    <div class="stat"><span>AVG PROCESSING TIME</span><b id="mAvg">—</b></div>
+  </section>
+
+  <!-- ============ SCENARIO LAB ============ -->
+  <section class="panel lab" id="lab" aria-labelledby="labTitle">
+    <header class="lab-head">
+      <h2 id="labTitle">🧪 SCENARIO LAB</h2>
+      <p>Change the conditions. Observe the system.</p>
+    </header>
+
+    <div class="lab-grid">
+      <div class="lab-col">
+        <h3 class="lab-h">Experiment settings</h3>
+        <div class="lab-form">
+          <label>Buffer capacity
+            <select id="labCap"></select>
+          </label>
+          <label>Producer speed
+            <select id="labProd">
+              <option value="2">Slow</option><option value="4" selected>Medium</option><option value="7">Fast</option><option value="10">Very Fast</option>
+            </select>
+          </label>
+          <label>Consumer speed
+            <select id="labCons">
+              <option value="2">Slow</option><option value="4" selected>Medium</option><option value="7">Fast</option><option value="10">Very Fast</option>
+            </select>
+          </label>
+          <label>Number of consumers
+            <select id="labN"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+          </label>
+          <label>Synchronization
+            <select id="labSync"><option value="on" selected>ON</option><option value="off">OFF</option></select>
+          </label>
+        </div>
+        <div class="lab-actions">
+          <button id="btnRun" class="btn primary" type="button">▶ Run Experiment</button>
+          <button id="btnLabRush" class="btn danger" type="button">🚨 Flight Rush</button>
+        </div>
+
+        <h3 class="lab-h">Quick scenarios</h3>
+        <div class="preset-grid" id="presetGrid"></div>
+
+        <h3 class="lab-h">⚔ Compare systems</h3>
+        <div class="lab-actions">
+          <label class="inline">Compare
+            <select id="cmpMode">
+              <option value="sync">No synchronization vs Mutex</option>
+              <option value="consumers">Fewer vs more consumers</option>
+              <option value="capacity">Small vs large buffer</option>
+            </select>
+          </label>
+          <button id="btnCompare" class="btn accent" type="button">⚔ Compare Systems</button>
+        </div>
+        <p class="hint">Both systems run the same workload for 60 simulated seconds, using the settings above.</p>
+      </div>
+
+      <div class="lab-col">
+        <div class="lab-card" id="predBox" aria-live="polite"></div>
+        <div class="progress-wrap" id="expProgressWrap" hidden>
+          <div class="progress-text" id="expProgressText"></div>
+          <div class="bar big"><i id="expProgressBar"></i></div>
+        </div>
+        <div class="lab-card" id="resultBox" hidden aria-live="polite"></div>
+        <div class="lab-card" id="compareBox" hidden aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EVENT LOG + STATE HISTORY ============ -->
+  <div class="panel-row two">
+    <section class="panel log-panel" aria-labelledby="logTitle">
+      <header class="panel-head">
+        <h2 id="logTitle">Event log</h2>
+        <ul class="legend" aria-label="Log legend">
+          <li><i class="d normal"></i>Normal</li>
+          <li><i class="d wait"></i>Waiting</li>
+          <li><i class="d error"></i>Error / race</li>
+          <li><i class="d sync"></i>Synchronization</li>
+          <li><i class="d scenario"></i>Scenario</li>
+        </ul>
+      </header>
+      <div class="log-box" id="logBox" role="log" aria-live="off" tabindex="0" aria-label="Event log console"></div>
+    </section>
+
+    <section class="panel history-panel" aria-labelledby="histTitle">
+      <header class="panel-head col">
+        <h2 id="histTitle">State history</h2>
+        <p class="sub">Latest system states, oldest at the top</p>
+      </header>
+      <ol class="history" id="historyList"></ol>
+    </section>
+  </div>
+
+  <!-- ============ WHAT'S HAPPENING ============ -->
+  <section class="panel why" id="why" aria-labelledby="whyTitle">
+    <header class="panel-head col">
+      <h2 id="whyTitle">What's happening?</h2>
+    </header>
+    <p class="why-text" id="whyText">Press START. The Producer creates baggage and places it on the conveyor. Consumers take it off and sort it.</p>
+    <p class="why-term" id="whyTerm"></p>
+  </section>
+</main>
+
+<footer class="app-footer">
+  <p>Airport Baggage Flow · Producer–Consumer problem · bounded buffer, semaphores &amp; mutex. Frontend only: HTML, CSS and vanilla JavaScript.</p>
+</footer>
+
+<!-- ============ VIVA MODE ============ -->
+<dialog id="vivaDialog" class="viva" aria-labelledby="vivaTitle">
+  <div class="viva-head">
+    <h2 id="vivaTitle">🎓 Viva mode</h2>
+    <button id="btnVivaClose" class="btn ghost" type="button">✕ Close</button>
+  </div>
+  <div class="viva-grid">
+    <article class="viva-card"><h3>What is the Producer?</h3><p>The check-in system that generates baggage.</p></article>
+    <article class="viva-card"><h3>What is the Consumer?</h3><p>The sorting system that processes baggage.</p></article>
+    <article class="viva-card"><h3>What is the Buffer?</h3><p>Temporary storage between Producer and Consumer: the baggage conveyor, with a fixed capacity.</p></article>
+    <article class="viva-card"><h3>What happens when the buffer is full?</h3><p>The Producer must wait until a Consumer removes a bag.</p></article>
+    <article class="viva-card"><h3>What happens when the buffer is empty?</h3><p>Consumers must wait until the Producer adds a bag.</p></article>
+    <article class="viva-card"><h3>What is a Race Condition?</h3><p>When multiple processes access shared data simultaneously and the result can become incorrect.</p></article>
+    <article class="viva-card"><h3>Why Mutex?</h3><p>To allow only one process to access the critical section at a time.</p></article>
+    <article class="viva-card"><h3>Why Semaphore?</h3><p>To control access to available and occupied buffer slots: <code>empty</code> counts free slots, <code>full</code> counts filled slots.</p></article>
+  </div>
+  <pre class="viva-code" aria-label="Classic solution pseudocode">Producer:                Consumer:
+  wait(empty)              wait(full)
+  insert(bag)              wait(mutex)
+  signal(full)             remove(bag)    // critical section
+                           signal(mutex)
+                           signal(empty)
+                           sort(bag)</pre>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
